@@ -10,3 +10,55 @@ An autonomous, event-driven analytics assistant that translates plain English/Fr
 ---
 
 ## 🏗️ System Architecture
+
+## 🏗️ System Architecture
+
+
+┌─────────────────┐       HTTP POST       ┌────────────────────────────────────────────────────────┐
+│                 │──────────────────────►│                    n8n WORKFLOW                        │
+│    Streamlit    │                       │  ┌──────────────┐    ┌──────────────┐    ┌──────────┐  │
+│    Dashboard    │◄──────────────────────│  │ Webhook      │───►│ Dynamic      │───►│ AI Agent │  │
+└─────────────────┘      JSON Payload     │  │ Trigger      │    │ Schema Fetch │    │ (LLM)    │  │
+                        │  └──────────────┘    └──────────────┘    └────┬─────┘  │
+                        │                                               │        │
+                        │  ┌──────────────┐    ┌──────────────┐         │        │
+                        │  │ Respond to   │◄───│ PostgreSQL   │◄────────┘        │
+                        │  │ Webhook      │    │ Execution    │ (Safe Query Only)│
+                        │  └──────────────┘    └──────────────┘                  │
+                        │                             ▲                          │
+                        │                             │                          │
+                        │                    ┌────────┴─────────┐                │
+                        │                    │ JS AST & Safety  │                │
+                        │                    │ Validator Node   │                │
+                        │                    └──────────────────┘                │
+└────────────────────────────────────────────────────────┘
+
+---
+
+## 🛠️ Core Stack & Implementation Details
+
+### 1. Database Layer (Neon PostgreSQL)
+Hosted on serverless Neon PostgreSQL with structured relational tables (`customers` and `orders`). Relational keys and column data types are configured to allow dynamic schema extraction.
+
+### 2. Orchestration Layer (n8n Self-Hosted)
+Handles event-driven routing between chat UI requests, metadata generation, LLM prompting, safety parsing, and database query execution.
+
+* **Webhook Trigger:** Exposes production `/webhook/` endpoint accepting incoming chat requests.
+* **Schema Fetcher:** Dynamically queries `information_schema` to inject live table structures, types, and foreign key relationships directly into the LLM system prompt.
+* **AI Agent Node:** Translates natural language into structured PostgreSQL queries using high-performance chat models (Groq / OpenAI).
+
+### 3. Security Guardrail (JS AST/Safety Validator)
+A custom n8n Code Node (JavaScript) operating on a zero-trust model:
+* Strips markdown code fences (` ```sql `) and normalizes whitespace.
+* Performs tokenization and uppercase normalization.
+* Scans against a strict array of blocked modification/destruction keywords: `DROP`, `DELETE`, `TRUNCATE`, `ALTER`, `INSERT`, `UPDATE`, `CREATE`, `GRANT`, `REVOKE`.
+* Returns a structured payload: `{"is_safe": boolean, "sql": string}`. Non-SELECT queries are blocked before hitting the database.
+
+### 4. Frontend Dashboard (Streamlit)
+* Connected via `requests.post()` calls to the n8n production webhook endpoint.
+* Unpacks payload fields (`is_safe`, `sql`, and result rows).
+* **Collapsible Developer View:** Displays validated SQL statements for auditability.
+* **Automated DataViz Heuristic:** Evaluates DataFrame schemas to auto-select rendering styles:
+  * **Time-Series Line Charts:** Triggered when datetime and numerical columns coexist.
+  * **Categorical Bar Charts:** Triggered for categorical aggregations.
+  * **Interactive Data Tables:** Rendered via Pandas dataframes for raw listings.
