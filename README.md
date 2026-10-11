@@ -11,25 +11,28 @@ An autonomous, event-driven analytics assistant that translates plain English/Fr
 
 ## 🏗️ System Architecture
 
+```mermaid
+flowchart TD
+    subgraph Frontend ["Streamlit Dashboard"]
+        UI[Chat Interface & Auto-Viz]
+    end
 
-┌───────────────────┐                         ┌────────────────────────────────────────────────────────┐
-│                   │                         │                      n8n WORKFLOW                      │
-│     Streamlit     │        HTTP POST        │  ┌──────────────┐    ┌──────────────┐    ┌──────────┐  │
-│     Dashboard     │────────────────────────►│  │ Webhook      │───►│ Schema       │───►│ AI Agent │  │
-│   (Chat & Viz)    │                         │  │ Trigger      │    │ Fetcher      │    │  (LLM)   │  │
-└───────────────────┘                         │  └──────────────┘    └──────────────┘    └────┬─────┘  │
-          ▲                                   │                                             │        │
-          │                                   │  ┌──────────────┐    ┌──────────────┐       │        │
-          │                                   │  │ Respond to   │◄───│ PostgreSQL   │◄──────┘        │
-          └───────────────────────────────────│  │ Webhook      │    │ Execution    │ (Safe SQL Only)│
-                    JSON Response             │  └──────────────┘    └──────────────┘                │
-                                              │                             ▲                      │
-                                              │                             │                      │
-                                              │                    ┌────────┴─────────┐            │
-                                              │                    │ JS AST & Safety  │            │
-                                              │                    │ Validator Node   │            │
-                                              │                    └──────────────────┘            │
-                                              └────────────────────────────────────────────────────────┘
+    subgraph n8n ["n8n Workflow (Production)"]
+        Webhook[Webhook Trigger] --> Schema[Schema Fetcher]
+        Schema --> AI[AI Agent LLM]
+        AI --> Validator[JS AST & Safety Validator]
+        Validator -->|Safe SQL Only| PG[PostgreSQL Execution]
+        PG --> Respond[Respond to Webhook]
+    end
+
+    subgraph Database ["Neon PostgreSQL"]
+        Neon[(Neon DB: customers & orders)]
+    end
+
+    UI -->|HTTP POST JSON| Webhook
+    AI -.->|Inspects DB Schema| Neon
+    PG -->|Executes Query| Neon
+    Respond -->|JSON Data Payload| UI
 
 
 ## 🛠️ Core Stack & Implementation Details
