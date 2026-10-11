@@ -1,0 +1,218 @@
+{
+  "name": "workflow_n8n",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "=text-to-sql",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.2,
+      "position": [
+        -1472,
+        16
+      ],
+      "id": "b82277f7-ee8f-43da-aff8-db30f91b14ce",
+      "name": "Webhook",
+      "webhookId": "232eb56c-a290-4b4e-845b-5bb49747e95b",
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{\n  {\n    is_safe: $('AST Validator').first().json.is_safe,\n    sql: $('AST Validator').first().json.sql,\n    data: $input.all().map(item => item.json)\n  }\n}}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        0,
+        0
+      ],
+      "id": "1a66558f-d0ba-4c7a-a00a-3d3332215da4",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nreturn [\n  {\n    json: {\n      schema: JSON.stringify({\n        customers: {\n          columns: {\n            customer_id: \"integer\",\n            full_name: \"character varying(100)\",\n            email: \"character varying(100)\",\n            city: \"character varying(50)\",\n            country: \"character varying(50)\",\n            created_at: \"timestamp\"\n          },\n          foreign_keys: []\n        },\n        orders: {\n          columns: {\n            order_id: \"integer\",\n            customer_id: \"integer\",\n            order_date: \"timestamp\",\n            status: \"character varying(20)\",\n            total_amount: \"numeric(10,2)\"\n          },\n          foreign_keys: [\n            \"customer_id -> customers(customer_id)\"\n          ]\n        },\n        payments: {\n          columns: {\n            payment_id: \"integer\",\n            order_id: \"integer\",\n            payment_date: \"timestamp\",\n            payment_method: \"character varying(30)\",\n            amount: \"numeric(10,2)\"\n          },\n          foreign_keys: [\n            \"order_id -> orders(order_id)\"\n          ]\n        },\n        products: {\n          columns: {\n            product_id: \"integer\",\n            product_name: \"character varying(100)\",\n            category: \"character varying(50)\",\n            unit_price: \"numeric(10,2)\",\n            stock_quantity: \"integer\"\n          },\n          foreign_keys: []\n        }\n      })\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1216,
+        64
+      ],
+      "id": "b1bda108-1b64-4cfa-865b-0fe4dbc02a3b",
+      "name": "Schema Fetcher"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "{{ $('AST Validator').first().json.sql }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        -320,
+        16
+      ],
+      "id": "1006e720-471d-45d2-bf73-ac86a1e1fd71",
+      "name": "Execute a SQL query",
+      "executeOnce": false,
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "credentials": {
+        "postgres": {
+          "id": "BatAu8toLhVKqeOR",
+          "name": "Postgres account 2"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "value": "openai/gpt-oss-120b",
+          "mode": "list",
+          "cachedResultName": "openai/gpt-oss-120b"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        -896,
+        320
+      ],
+      "id": "3101b33c-b216-4ef6-bdd4-e3417c0fee90",
+      "name": "OpenAI Chat Model1",
+      "credentials": {
+        "openAiApi": {
+          "id": "4iLXWgRxRXR4dQ6I",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an enterprise Text-to-SQL assistant for PostgreSQL.\n\nYour task is to convert the user's natural-language question into one valid, read-only SQL query using only the supplied database schema.\n\nRules:\n1. Output only a single PostgreSQL SELECT statement.\n2. Use only tables and columns that exist in the supplied schema.\n3. Never generate INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE, GRANT, or REVOKE statements.\n4. Never invent tables, columns, relationships, or business data.\n5. Use JOINs only when supported by the declared foreign-key relationships.\n6. For products currently in stock, use stock_quantity > 0.\n7. For the three most expensive products, sort by unit_price DESC and apply LIMIT 3.\n8. Return SQL only, without Markdown fences or explanatory text.\n9. If the request cannot be answered from the schema, return an empty output rather than inventing a query.\n\nDatabase schema:\n{{ $json.schema }}\n\nUser question:\n{{ $('Webhook').first().json.body.question }}",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3.1,
+      "position": [
+        -1008,
+        32
+      ],
+      "id": "7ddb8b7c-460f-465e-b6f1-19b4f9d33e98",
+      "name": "AI Agent1",
+      "retryOnFail": true,
+      "alwaysOutputData": true,
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "\nconst inputData = $input.first()?.json || {};\n\nlet content =\n  inputData.output ??\n  inputData.text ??\n  inputData.message?.content ??\n  \"\";\n\nlet sql = \"\";\n\ntry {\n  const parsed =\n    typeof content === \"string\"\n      ? JSON.parse(content)\n      : content;\n\n  sql = parsed?.sql ?? content;\n} catch (e) {\n  sql = content;\n}\n\n// Clean Markdown wrappers and whitespace\nsql = String(sql)\n  .replace(/^```(?:sql|json)?\\s*/i, \"\")\n  .replace(/\\s*```$/i, \"\")\n  .trim();\n\n// Forbidden SQL keywords\nconst forbidden = [\n  \"DROP\",\n  \"DELETE\",\n  \"TRUNCATE\",\n  \"ALTER\",\n  \"INSERT\",\n  \"UPDATE\",\n  \"CREATE\",\n  \"GRANT\",\n  \"REVOKE\",\n  \"EXECUTE\",\n  \"CALL\",\n  \"COPY\"\n];\n\nconst forbiddenPattern = new RegExp(\n  \"\\\\b(\" + forbidden.join(\"|\") + \")\\\\b\",\n  \"i\"\n);\n\n// Require a SELECT statement\nconst startsWithSelect = /^SELECT\\b/i.test(sql);\n\n// Reject multiple statements\nconst withoutTrailingSemicolon = sql.replace(/;\\s*$/, \"\");\nconst hasMultipleStatements = withoutTrailingSemicolon.includes(\";\");\n\n// Reject empty output and obvious natural-language responses\nconst isSafe =\n  sql.length > 0 &&\n  startsWithSelect &&\n  !forbiddenPattern.test(sql) &&\n  !hasMultipleStatements;\n\n// Return validated output\nreturn [\n  {\n    json: {\n      sql,\n      is_safe: isSafe,\n      reason: isSafe\n        ? null\n        : \"Rejected: output must be a single read-only SELECT statement.\"\n    }\n  }\n];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -528,
+        16
+      ],
+      "id": "e5521b52-d6cb-4f66-bc6f-87d99c249106",
+      "name": "AST Validator",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "onError": "continueErrorOutput"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Schema Fetcher",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schema Fetcher": {
+      "main": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute a SQL query": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model1": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "AI Agent1",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Agent1": {
+      "main": [
+        [
+          {
+            "node": "AST Validator",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AST Validator": {
+      "main": [
+        [
+          {
+            "node": "Execute a SQL query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "ec02898d-0d10-4acc-a460-18f9d151dc01",
+  "meta": {
+    "instanceId": "fb8c2bbe409b8c403e2f3de79e0872dc1987cbc5b8871d5aedf0dc870c08259a"
+  },
+  "nodeGroups": [],
+  "id": "McONtPDRurJQ3vaM",
+  "tags": []
+}

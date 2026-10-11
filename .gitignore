@@ -1,0 +1,9 @@
+# Python / Streamlit cache
+__pycache__/
+.streamlit/
+*.pyc
+
+# Environment variables / secrets
+.env
+venv/
+env/
